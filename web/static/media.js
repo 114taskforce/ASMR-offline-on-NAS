@@ -17,7 +17,7 @@
     subRel: "",        // 当前字幕文件 rel
     subSeq: null,      // 最近使用的字幕 {work,dir,rel}，用于同目录顺延
     subOffset: 0,      // 字幕整体偏移（秒）
-    pagePushed: false, // 当前作品页是否由应用 pushState 打开
+    backToLib: false, // 关闭目录页时标记：历史跳回后切到「本地资源」面板
     subOpen: false,
     subCue: -1,
     subUserScroll: 0,
@@ -1069,12 +1069,11 @@
         renderBrowser();
         $("#mp-browser").classList.add("show");
         document.body.classList.add("mp-page-open");
+        // depth：当前 /library 历史条目距进入前页面的步数，返回键用它一次跳完
         if (push && location.pathname !== pageURL(sourceId)) {
-          history.pushState({ libPage: sourceId, dir: S.dir }, "", pageURL(sourceId));
-          S.pagePushed = true;
+          history.pushState({ libPage: sourceId, dir: S.dir, depth: 1 }, "", pageURL(sourceId));
         } else if (!history.state || !history.state.libPage) {
-          history.replaceState({ libPage: sourceId, dir: S.dir }, "", pageURL(sourceId));
-          S.pagePushed = false;
+          history.replaceState({ libPage: sourceId, dir: S.dir, depth: 0 }, "", pageURL(sourceId));
         }
       })
       .catch(function (e) { alert("读取作品目录失败：" + e.message); });
@@ -1096,32 +1095,33 @@
       }
     }
     var state = { libPage: S.work.source_id, dir: dir };
-    if (mode === "push") history.pushState(state, "", location.href);
-    else if (mode === "replace") history.replaceState(state, "", location.href);
+    if (mode === "push") {
+      state.depth = ((history.state && history.state.depth) || 0) + 1;
+      history.pushState(state, "", location.href);
+    } else if (mode === "replace") {
+      state.depth = (history.state && history.state.depth) || 0;
+      history.replaceState(state, "", location.href);
+    }
   }
 
   // 关闭页面只改视觉与地址，不触碰 audio，播放不会中断
+  // 返回键直接回「本地资源」：按 depth 一次跳完所有 /library 历史
+  // （含同级文件夹来回跳转产生的条目），不再逐级原路返回
   function closePage() {
     var box = $("#mp-browser");
     if (box) box.classList.remove("show");
     document.body.classList.remove("mp-page-open");
     if (location.pathname.indexOf("/library/") !== 0) return;
-    var depth = S.dir ? S.dir.split("/").length : 0;
     S.dir = "";
-    if (history.state && history.state.libPage && S.pagePushed) {
-      history.go(-(depth + 1));
+    var depth = history.state && typeof history.state.depth === "number" ? history.state.depth : 0;
+    if (depth > 0) {
+      S.backToLib = true; // popstate 落回非 /library 后切到「本地资源」面板
+      history.go(-depth);
       return;
     }
-    // 地址栏直达 / 外链进入：优先回到来源页，没有来源时才回「本地资源」
-    var ref = "";
-    try { ref = document.referrer || ""; } catch (e) { ref = ""; }
-    if (ref && ref.indexOf(location.origin + "/") === 0 &&
-        ref.split("#")[0] !== location.href.split("#")[0] &&
-        ref.indexOf("/library/") < 0) {
-      location.replace(ref);
-      return;
-    }
+    // 地址栏直达 / 外链进入：无可退历史，直接回「本地资源」
     history.replaceState(null, "", "/");
+    if (window.switchTab) window.switchTab("library");
   }
 
   window.addEventListener("popstate", function (ev) {
@@ -1143,6 +1143,11 @@
       var box = $("#mp-browser");
       if (box) box.classList.remove("show");
       document.body.classList.remove("mp-page-open");
+      // 返回键跳出目录页后：切到「本地资源」面板（switchTab 内部会刷新列表）
+      if (S.backToLib) {
+        S.backToLib = false;
+        if (window.switchTab) window.switchTab("library");
+      }
     }
   });
 
