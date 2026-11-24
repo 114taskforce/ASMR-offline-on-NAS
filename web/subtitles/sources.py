@@ -53,6 +53,9 @@ _LEADING_SEQ = re.compile(
 # 保留：数字、拉丁字母、平假名、片假名、CJK、々〆ー
 _NOISE = re.compile(r"[^0-9a-z\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff々〆ー]+")
 
+# 下载保名截断尾巴：-702e3c / _A4ADAD（6 位十六进制）
+_TRUNC_HASH = re.compile(r"[-_\s]?[0-9a-f]{6}$", re.IGNORECASE)
+
 # 优先级判断（基于原始相对路径，不做归一）
 _SELESS_RE = re.compile(
     r"(?:"
@@ -86,19 +89,30 @@ def _clean(text: str) -> str:
 
 
 def _name_key(rel: str) -> str:
-    name = os.path.basename(rel)
-    key = _clean(os.path.splitext(name)[0])
+    stem = os.path.splitext(os.path.basename(rel))[0]
+    # 超长文件名下载时会按 UTF-8 截断并追加 6 位 md5 哈希（downloader 的
+    # 保名规则）；同一音频的 wav/mp3 副本截断点不同、哈希也不同，不剥掉
+    # 会让「【３】xxx-a4adad.wav」和「【３】xxx-702e3c.mp3」对不上而重复识别
+    stem = _TRUNC_HASH.sub("", stem)
+    key = _clean(stem)
     # 名字被剥空时退回原始 stem，避免所有异常文件挤进同一组
     if not key:
-        key = _NOISE.sub("", unicodedata.normalize("NFKC", os.path.splitext(name)[0])).lower()
+        key = _NOISE.sub("", unicodedata.normalize("NFKC", stem)).lower()
     return key
 
 
 def _context_key(rel: str) -> str:
     """归一化父目录：格式/SE/序号目录段变空，只保留真正的章节结构。"""
     parts = [p for p in os.path.dirname(rel).replace("\\", "/").split("/") if p]
-    segs = [_clean(x) for x in parts]
-    return "/".join(s for s in segs if s and s not in _EMPTY_SEGMENTS)
+    segs = []
+    for x in parts:
+        s = _clean(x)
+        # 剥完变体词后只剩纯数字的段也是序号/格式目录（如 `3-1_wav`
+        # 清理后残留 `1`），不能当章节结构，否则同一音频会拆成多组重复识别
+        if not s or s.isdigit() or s in _EMPTY_SEGMENTS:
+            continue
+        segs.append(s)
+    return "/".join(segs)
 
 
 def _priority(rel: str, index: int) -> tuple:
