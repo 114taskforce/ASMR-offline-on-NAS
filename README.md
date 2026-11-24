@@ -1,0 +1,64 @@
+# ASMR WebUI — 跑在 NAS 上的私人作品库
+
+从 [asmr.one](https://www.asmr.one) 搜索、批量下载 ASMR 作品到 NAS，网页直接播放，本地 AI 自动生成中文字幕。一台 N100 迷你主机即可流畅运行，无需 Docker、无需显卡。
+
+## 功能
+
+| 板块 | 说明 |
+| --- | --- |
+| 搜索发现 | 从 asmr.one 搜索作品，多标签/排除语法筛选，勾选批量下载，多存储空间按优先级顺延 |
+| 本地资源 | 已下载作品的浏览、标签/声优/社团筛选、时长排序、随机排序、目录树、完整性校验 |
+| 播放器 | 网页播放 NAS 音频，字幕（VTT/SRT/ASS/LRC/TXT 预览）、进度记忆、双语字幕、字幕时间偏移 |
+| 生成字幕 | 本地 VAD + ASR 识别日文（纯 CPU，音频不出 NAS），翻译 API 生成中文/双语字幕，支持分时禁用 API、断点续跑、无语音音轨自动跳过 |
+| 系统 | 存储空间管理（拖动排序、保留空间）、销量自动更新、安全模式、删除密码 |
+
+## 项目特点
+
+- **IPv6 直连免流** — asmr.one 走 Cloudflare IPv6 直连（内置 SNI 变体绕过阻断），不消耗代理/VPN 流量，国内移动网络下 IPv6 流量免计费；
+- **低配硬件友好** — Intel N100 迷你主机即可流畅运行全部功能，推理纯 CPU（onnxruntime），空闲内存占用约 50 MB；
+- **翻译成本极低** — 翻译调用 OpenAI 兼容 API，实测约 0.1 元/小时音频（批发送 + 前缀缓存优化），支持分时禁用进一步省钱；
+- **本地识别零上传** — ASR 识别完全在本机完成，翻译环节只上传纯文本，音频不出 NAS。
+
+## 已知限制（生成字幕）
+
+- 多主角对话识别效果不佳：模型针对单人旁白式语音优化，多声优对话场景容易漏字、错分段；
+- 声道合并识别：推理时立体声会下混为单声道，左右耳分音的音源可能出现单侧耳语相消导致漏识别。
+
+## 硬件要求
+
+| 用途 | 最低要求 |
+| --- | --- |
+| 下载 / 浏览 / 播放 | 总内存 ≥ 512 MB |
+| 生成字幕 | **总内存 ≥ 4 GB**（硬性要求，不足会自动禁用），建议 4 核 CPU |
+
+## 快速开始
+
+完整保姆级教程（含逐行命令）见 **[DEPLOY.md](DEPLOY.md)**。核心步骤：
+
+```bash
+# 1. 上传代码到 NAS（如 /opt/asmr-webui），模型从 Release 下载解压到 data/models/
+# 2. 装依赖
+pip3 install -r requirements.txt
+# 3. 复制 config.example.json 为 config.json，按需修改路径
+# 4. 安装 systemd 服务（deploy/asmr-webui.service）
+sudo systemctl enable --now asmr-webui
+# 5. 浏览器打开 http://<NAS的IP>:8787
+```
+
+## 目录结构
+
+```
+web/               Flask 后端 + 纯 HTML/JS 前端（无需构建）
+web/subtitles/     字幕引擎：VAD 切分、ASR 识别、翻译队列、字幕落盘
+web/routes/        搜索 / 下载 / 媒体库 / 播放 / 字幕 / 系统接口
+downloader.py      下载内核（任务队列、断点续传、完整性校验）
+ipv6_net.py        严格 IPv6 的 HTTPS 客户端（SNI 变体、Range、重试）
+asmr_client.py     asmr.one API 封装
+data/models/       AI 模型权重（从 Release 下载，不入库）
+deploy/            systemd 服务文件、安装脚本
+DEPLOY.md          保姆级部署教程
+```
+
+## 许可
+
+见 [LICENSE](LICENSE)。
