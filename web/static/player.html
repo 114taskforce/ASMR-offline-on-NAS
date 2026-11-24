@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASMR 播放</title>
+<link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app">
+  <a href="/" id="player-back" class="back-btn"><svg class="ico" aria-hidden="true"><use href="/icons.svg#i-arrow-left"></use></svg>返回首页</a>
+
+  <div id="no-local" class="no-download hidden">
+    <h2><svg class="ico" aria-hidden="true"><use href="/icons.svg#i-alert"></use></svg>此作品尚未下载</h2>
+    <p>请返回首页搜索并下载后再播放</p>
+    <a href="/" class="btn-primary" style="text-decoration:none">返回首页</a>
+  </div>
+
+  <div id="player-wrap" class="player-layout hidden">
+    <!-- 左侧文件列表 -->
+    <aside class="file-list">
+      <h3><svg class="ico" aria-hidden="true"><use href="/icons.svg#i-folder"></use></svg>音频文件</h3>
+      <div id="file-list"></div>
+    </aside>
+
+    <!-- 主播放区 -->
+    <main class="player-main">
+      <h2 id="work-title">加载中...</h2>
+      <div class="meta" id="work-meta"></div>
+
+      <div class="audio-wrap">
+        <audio id="player" controls>
+          <!-- 字幕轨道会动态注入 -->
+        </audio>
+      </div>
+
+      <div id="subtitle-display" class="subtitle-display"></div>
+
+      <div class="subtitle-controls">
+        <label for="subtitle-select">字幕</label>
+        <select id="subtitle-select">
+          <option value="none">关闭</option>
+        </select>
+        <button id="btn-transcribe" class="btn-ghost" disabled>AI 转录 (Whisper)</button>
+        <span id="transcribe-status" style="color:var(--t3); font-size:12px"></span>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/player.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# 运行时生成的本地数据
+config.json
+data/library.db
+data/*.db
+
+# AI 模型权重：从 GitHub Release 下载（见 DEPLOY.md 第 1 步）
+data/models/
+
+# 开发与临时文件
+.trae/
+.screenshots/
+__pycache__/
+*.pyc
+release/
+node_modules/
+
+# 备份
+_backup_*/
+*.bak
+
+spec.md
+tasks.md

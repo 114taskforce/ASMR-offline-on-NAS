@@ -1,0 +1,22 @@
+[Unit]
+Description=ASMR WebUI Server
+After=network-online.target
+Wants=network-online.target
+# 失败重启不设上限，避免连续失败后被 systemd 永久放弃
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=wwx
+Group=Users
+WorkingDirectory=/opt/asmr-webui
+ExecStart=/usr/bin/python3 /opt/asmr-webui/web/app.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:/var/log/asmr-webui.log
+StandardError=append:/var/log/asmr-webui.err.log
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

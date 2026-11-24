@@ -1,0 +1,37 @@
+{
+  "_comment": "NAS 部署时复制为 config.json 放在项目根目录。NAS 上路径用 Linux 格式。",
+  "api_base": "https://api.asmr.one",
+  "account": "guest",
+  "password": "guest",
+
+  "web_host": "::",
+  "web_port": 8787,
+
+  "download_dir": "",
+  "storage_roots": [
+    {"path": "/vol1/asmr-downloads", "min_free_gb": 50}
+  ],
+  "db_path": "/vol1/asmr-data/library.db",
+
+  "workers": 4,
+  "qps": 1.0,
+  "retries": 3,
+  "timeout": 30,
+  "prefer_media": "all",
+  "include_ext": "",
+  "exclude_ext": "",
+  "include_keyword": "",
+  "exclude_keyword": "",
+  "force": false,
+  "proxy": "",
+  "bind_interface": "",
+  "bind_ipv6": "",
+  "sni_policy": "auto",
+  "verify_hostname": true,
+
+  "pins": {
+    "api.asmr.one": "2606:4700:3034::6815:2686",
+    "asmr.one": "2606:4700:3034::6815:2686",
+    "raw.kiko-play-niptan.one": "2606:4700:20::681a:48c"
+  }
+}
