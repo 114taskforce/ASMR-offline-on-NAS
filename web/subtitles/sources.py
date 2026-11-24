@@ -39,8 +39,12 @@ _FORMAT_MARK = (
     r"|音声データ|音声数据|音声|voice|audio)"
     r"(?:版)?"
 )
+# 早期购入版：与正式版同一段声音的先行发售包装，目录/文件名级的变体词；
+# 正式版/通常版同名处理；不含「特典」字样的组合（早期購入特典是不同内容，仍作为独立章节保留）
+_EARLY_BIRD_MARK = r"(?:(?:早期|初期)[購购]入(?:版)?|正式版|通常版|通常盤)"
 _VARIANT_TOKEN = re.compile(
-    "|".join([_SE_MARK, _CONTAINER_MARK, _FORMAT_MARK]), re.IGNORECASE)
+    "|".join([_SE_MARK, _CONTAINER_MARK, _FORMAT_MARK, _EARLY_BIRD_MARK]),
+    re.IGNORECASE)
 
 # 序号前缀：01. / 01_ / 01a- / Track01： / 反転01_ / おまけ01_ …
 # 要求数字后面必须有分隔符，避免把 "3P" 之类的标题吃掉
