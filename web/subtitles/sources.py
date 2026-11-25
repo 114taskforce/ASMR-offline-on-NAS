@@ -48,6 +48,14 @@ _VARIANT_TOKEN = re.compile(
     "|".join([_SE_MARK, _CONTAINER_MARK, _FORMAT_MARK, _EARLY_BIRD_MARK]),
     re.IGNORECASE)
 
+# 括号包裹的音轨序号：`【Tr1】` / `[Track01]` / `【Tr2_SEなし】`
+# 变体词先剥掉后括号里可能残留 `_`/空格（`【Tr1_ 】`），这里一并吞掉，
+# 否则 `【Tr1】xxx` 与 `【Tr1_SEなし】xxx` 一个剥掉序号、一个没剥，同内容会拆成两组
+_BRACKET_TRACK = re.compile(
+    r"[\[【(［（]\s*(?:tr|track|トラック|no)\.?\s*\d{1,3}[a-c]?\s*[_\-\s]*[\]】)］）]",
+    re.IGNORECASE,
+)
+
 # 序号前缀：01. / 01_ / 01a- / Track01： / 反転01_ / おまけ01_ …
 # 要求数字后面必须有分隔符，避免把 "3P" 之类的标题吃掉
 _LEADING_SEQ = re.compile(
@@ -93,6 +101,7 @@ def _clean(text: str) -> str:
     """NFKC + 去变体标记 + 去序号 + 去符号，得到稳定的比较 key。"""
     s = unicodedata.normalize("NFKC", text or "")
     s = _VARIANT_TOKEN.sub(" ", s)
+    s = _BRACKET_TRACK.sub(" ", s)
     s = _LEADING_SEQ.sub("", s, count=1)
     s = _NOISE.sub("", s)
     return s.lower()
