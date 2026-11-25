@@ -53,6 +53,19 @@ _VARIANT_TOKEN = re.compile(
     "|".join([_SE_MARK, _CONTAINER_MARK, _FORMAT_MARK, _EARLY_BIRD_MARK]),
     re.IGNORECASE)
 
+# 括号包裹的混音/包装补充说明，只剥「纯标记」括号：
+#   `（ルームver）` `(おまけ)` `（SE無し）` `（完全版）`
+# 不能无条件剥所有括号——`（耳元ごっくんver）` `（飲尿ver）` `（前編）` 是内容
+# 标识，剥掉会让不同音轨撞名、被误并成同一组（少生成一份字幕）。
+_PAREN_TAG = re.compile(
+    r"[\(\（]\s*(?:"
+    r"ルーム(?:ver|バージョン)?|room[_\-\s]*ver(?:sion)?"
+    r"|おまけ|オマケ|完全版|フルバージョン"
+    r"|se\s*[無な无しあり有]?\s*[しな無有无]?"
+    r"|効果音[^\(\)（）]{0,6}|效果音[^\(\)（）]{0,6}"
+    r")\s*[\)\）]",
+    re.IGNORECASE)
+
 # 括号内序号：`【Tr1】` / `【01】` / `[Track02]` / `（第1話）`
 _SEQ_BR = re.compile(
     r"[【\[（(]\s*(?:tr|track|トラック|no\.?|第)?\s*0*\d{1,3}[a-c]?\s*"
@@ -89,7 +102,8 @@ _SE_PRESENT_RE = re.compile(
 )
 _REVERSED_RE = re.compile(
     r"反転|逆再生|リバース|reversed?|ぎゃくさいせい|左右反転", re.IGNORECASE)
-_DERIVED_RE = re.compile(r"即抜き|切り抜き|抜粋|ダイジェスト|体験版|体验版|お試し|short",
+_DERIVED_RE = re.compile(r"即抜き|切り抜き|抜粋|ダイジェスト|体験版|体验版|お試し|short"
+                         r"|ルームエフェクト|ルームver|room[_\-\s]*ver",
                          re.IGNORECASE)
 _LOSSLESS = {".wav", ".flac", ".aiff", ".aif"}
 
@@ -108,7 +122,8 @@ def _sim_key(rel: str) -> str:
     """归一化标题：剥扩展名 / 截断哈希 / 变体 tag / 序号 / 符号。"""
     stem = os.path.splitext(os.path.basename(rel))[0]
     s = unicodedata.normalize("NFKC", _TRUNC_HASH.sub("", stem))
-    s = _VARIANT_TOKEN.sub(" ", s)   # 先剥 SE/格式/版本
+    s = _PAREN_TAG.sub(" ", s)       # 先剥纯混音/包装括号标记（ルームver / おまけ）
+    s = _VARIANT_TOKEN.sub(" ", s)   # 再剥 SE/格式/版本
     s = _SEQ_BR.sub(" ", s)          # 再剥括号序号
     s = _SEQ_LEAD.sub(" ", s)        # 再剥开头序号
     return _NOISE.sub("", s).lower()
