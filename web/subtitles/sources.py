@@ -6,7 +6,7 @@
 现改为内容级判定：
   1. 名称预处理：剥扩展名、下载截断哈希、括号/开头序号、SE 与格式 tag，
      只留纯标题（`_VARIANT_TOKEN` 仍是剥离规则表）
-  2. 标题相似度 ≥ 95%（`difflib.SequenceMatcher`）
+  2. 标题编辑距离 < 5 字符（绝对字符差异，不用百分比）
   3. 时长差 ≤ max(2s, min(25s, 长度 × 5%))
      · wav/mp3 同源副本：实测差 0~1.7s
      · SE 有/无版本：实测最多差 ~20s
@@ -21,11 +21,11 @@ ffprobe 补测并缓存到进程内（按 路径+mtime+size 校验失效）。�
 """
 from __future__ import annotations
 
-import difflib
 import os
 import re
 import threading
 import unicodedata
+from collections import Counter
 from typing import Iterable
 
 # SE / 音量 / 容器 / 格式：属于「同一段声音的不同封装」，可安全剥离
@@ -108,8 +108,9 @@ _DERIVED_RE = re.compile(r"即抜き|切り抜き|抜粋|ダイジェスト|体�
 _LOSSLESS = {".wav", ".flac", ".aiff", ".aif"}
 
 # 相似度与时长容差
-_SIM_MIN = 0.95
-_LEN_PRE = 0.05          # 标题长度相对差超过 5% 直接跳过（省 CPU）
+# 不用百分比：短标题差 1 个字 ratio 就跌破 95%，长标题差 3 个字却仍 0.99。
+# 改成绝对字符差异——归一标题的编辑距离 < 5 且时长一致即视为同一段声音。
+_MAX_DIFF_CHARS = 5
 _DUR_ABS_MIN = 2.0       # 秒
 _DUR_ABS_MAX = 25.0      # 秒（长音频最多放宽到 25s）
 _DUR_REL = 0.05
@@ -160,13 +161,43 @@ def _duration_of(root: str, rel: str, durations: dict | None,
     return dur
 
 
+def _edit_distance(a: str, b: str) -> int:
+    """Levenshtein 距离（插入/删除/替换均计 1）。"""
+    if a == b:
+        return 0
+    if len(a) < len(b):
+        a, b = b, a
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1,          # 删除
+                           cur[j - 1] + 1,        # 插入
+                           prev[j - 1] + (ca != cb)))  # 替换
+        prev = cur
+    return prev[-1]
+
+
+def _char_diff_lb(a: str, b: str) -> int:
+    """编辑距离的 O(n) 下界：两标题字符多重集的差集大小。
+
+    完全相同字符构成的对下界为 0，进入 DP；差异明显的一步排除，
+    避免全库轮询时对数 × O(n²) 的 Levenshtein 把 CPU 吃满。
+    """
+    ca = Counter(a)
+    cb = Counter(b)
+    return sum((ca - cb).values()) + sum((cb - ca).values())
+
+
 def _same_content(ka: str, kb: str, da: float, db: float) -> bool:
     if not ka or not kb:
         return False
-    longest = max(len(ka), len(kb))
-    if longest and abs(len(ka) - len(kb)) / longest > _LEN_PRE:
+    # 长度差已 ≥ 阈值时编辑距离必然超限，直接剪枝
+    if abs(len(ka) - len(kb)) >= _MAX_DIFF_CHARS:
         return False
-    if difflib.SequenceMatcher(None, ka, kb).ratio() < _SIM_MIN:
+    if _char_diff_lb(ka, kb) >= _MAX_DIFF_CHARS:
+        return False
+    if _edit_distance(ka, kb) >= _MAX_DIFF_CHARS:
         return False
     if da > 0 and db > 0:
         return abs(da - db) <= _duration_tol(max(da, db))
