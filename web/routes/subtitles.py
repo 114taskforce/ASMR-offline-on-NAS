@@ -401,8 +401,10 @@ def get_tracks(source_id: str):
 
     prefs = db.get_track_prefs(source_id)
     tracks: list[dict] = []
+    durations = {r["rel_path"]: float(r["duration"] or 0)
+                 for r in db.list_audio_index(source_id)}
     # 同 stem 的格式副本合并为一行：勾选控制整组是否参与翻译
-    for group in collect_work_tracks(root, AUDIO_EXTS):
+    for group in collect_work_tracks(root, AUDIO_EXTS, durations=durations, probe=True):
         primary = group[0]
         has_pref = any(rel in prefs for rel in group)
         # 已生成字幕 / 已有日文版（待翻译）的组默认不勾选，避免重复调用 API；
@@ -441,7 +443,10 @@ def set_track(source_id: str):
     if root and os.path.isdir(root):
         from web.subtitles import AUDIO_EXTS
         from web.subtitles.sources import collect_work_tracks
-        for group in collect_work_tracks(root, AUDIO_EXTS):
+        durations = {r["rel_path"]: float(r["duration"] or 0)
+                     for r in db.list_audio_index(source_id)}
+        for group in collect_work_tracks(root, AUDIO_EXTS,
+                                         durations=durations, probe=True):
             if rel in group:
                 rels = group
                 break

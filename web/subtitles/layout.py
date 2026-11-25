@@ -182,18 +182,20 @@ def has_ja(root: str) -> bool:
 
 
 def has_pending_translation(root: str, work_id: str,
-                            disabled: set[str] | None = None) -> bool:
+                            disabled: set[str] | None = None,
+                            durations: dict | None = None) -> bool:
     """是否有音轨已识别出日文、但还没生成中文版/双语版。
 
     逐个音轨比对三个类目下的实际文件，而不是看目录里有没有文件：
     日文版有对应文件、中文版和双语版都没有时才算待翻译。
     ``disabled`` 里被用户取消勾选的音轨组不算待翻译。
     """
-    return analyze_tracks(root, work_id, disabled)["buffered"]
+    return analyze_tracks(root, work_id, disabled, durations)["buffered"]
 
 
 def analyze_tracks(root: str, work_id: str,
-                   disabled: set[str] | None = None) -> dict[str, bool]:
+                   disabled: set[str] | None = None,
+                   durations: dict | None = None) -> dict[str, bool]:
     """一次扫描得出音轨翻译状态。
 
     ``buffered``：日文版里还留着没有译文的识别结果 → 待翻译。
@@ -202,11 +204,13 @@ def analyze_tracks(root: str, work_id: str,
     判定按「日文版实际文件」逐个比对：无论是一整条音轨没译，还是
     新识别出了日文、或中文文件被删掉，只要还有日文没译文就不算完成。
     同一 stem 的多个音源（SE 有/无）共用同一份译文，比对主音源即可。
+
+    ``durations`` 来自 audio_index；本路径 probe=False，避免轮询时 spawn ffprobe。
     """
     from . import AUDIO_EXTS
     from .sources import collect_work_tracks
 
-    groups = collect_work_tracks(root, AUDIO_EXTS)
+    groups = collect_work_tracks(root, AUDIO_EXTS, durations=durations, probe=False)
     main_of: dict[str, str] = {}
     group_of: dict[str, list[str]] = {}
     ja_names: dict[str, str] = {}
@@ -241,7 +245,8 @@ def analyze_tracks(root: str, work_id: str,
     return {"buffered": buffered, "complete": has_translated(root) and not buffered}
 
 
-def cleanup_orphan_ja(root: str, work_id: str) -> int:
+def cleanup_orphan_ja(root: str, work_id: str,
+                      durations: dict | None = None) -> int:
     """删除日文版里对应音频已不存在的 vtt（孤儿文件）。
 
     音源没了就永远不可能再生成译文，留着会破坏「日文版所有文件都有
@@ -251,7 +256,9 @@ def cleanup_orphan_ja(root: str, work_id: str) -> int:
     from .sources import collect_work_tracks
 
     valid = {filename(work_id, rel, "ja")
-             for group in collect_work_tracks(root, AUDIO_EXTS) for rel in group}
+             for group in collect_work_tracks(root, AUDIO_EXTS,
+                                              durations=durations, probe=False)
+             for rel in group}
     d = dir_path(root, "ja")
     try:
         names = os.listdir(d)

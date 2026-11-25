@@ -246,10 +246,12 @@ class SubtitleEngine:
             if not root:
                 continue
             # 对应音频已删除的日文 vtt 无法再翻译，顺手清掉保持完整性
-            if layout.cleanup_orphan_ja(root, wid):
+            durs = {r["rel_path"]: float(r["duration"] or 0)
+                    for r in self.db.list_audio_index(wid)}
+            if layout.cleanup_orphan_ja(root, wid, durations=durs):
                 print(f"[subtitle-engine] 清理孤儿日文 {wid}", flush=True)
             # 逐个文件比对：日文版里还有没生成中文的才入队（跳过用户取消勾选的音轨）
-            if not layout.has_pending_translation(root, wid, set()):
+            if not layout.has_pending_translation(root, wid, set(), durations=durs):
                 continue
             if self.db.active_subtitle_job(wid, "translate"):
                 continue
@@ -527,8 +529,12 @@ class SubtitleEngine:
         except Exception:
             traceback.print_exc()
 
-        # 无 SE 音源优先分组
-        groups = sources.collect_work_tracks(root, AUDIO_EXTS)
+        # 无 SE 音源优先分组（时长取自 audio_index，缺失时 ffprobe 补测）
+        groups = sources.collect_work_tracks(
+            root, AUDIO_EXTS,
+            durations={r["rel_path"]: float(r["duration"] or 0)
+                       for r in self.db.list_audio_index(work_id)},
+            probe=True)
         # 按音轨自然序号排序：保证送进同一翻译会话的顺序与作品内一致
         def _nat(rel: str):
             return [int(t) if t.isdigit() else t.lower()
@@ -727,7 +733,11 @@ class SubtitleEngine:
                                         message="未配置翻译 API", finished_at=_now())
             return
 
-        groups = sources.collect_work_tracks(root, AUDIO_EXTS)
+        groups = sources.collect_work_tracks(
+            root, AUDIO_EXTS,
+            durations={r["rel_path"]: float(r["duration"] or 0)
+                       for r in self.db.list_audio_index(work_id)},
+            probe=True)
 
         def _nat(rel: str):
             return [int(t) if t.isdigit() else t.lower()
