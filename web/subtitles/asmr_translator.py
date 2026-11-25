@@ -577,6 +577,75 @@ def _thinking_level(sub: dict) -> str:
     return "off" if sub.get("api_disable_thinking", True) else "medium"
 
 
+_RAW_NET: tuple | None = None
+
+
+def _raw_net() -> tuple:
+    """取未被 strict-IPv6 护栏替换的 getaddrinfo / socket。
+
+    ipv6_net.enable_strict_ipv6() 会全局改写 socket.getaddrinfo，只保留 AAAA
+    记录，使任何 IPv4-only 的服务解析失败（api.deepseek.com 只有 A 记录，
+    于是翻译一直报 Name or service not known）。翻译 API 与 asmr.one 无关，
+    这里缓存护栏安装前的原始实现；解析顺序仍是系统默认（一般 IPv6 优先），
+    不影响下载侧的 IPv6-only 约束。
+    """
+    global _RAW_NET
+    if _RAW_NET is None:
+        import socket as _socket
+        gi, sk = _socket.getaddrinfo, _socket.socket
+        try:
+            import ipv6_net  # 项目根目录，web/app.py 已加入 sys.path
+            gi = getattr(ipv6_net, "_ORIG_GETADDRINFO", gi)
+            sk = getattr(ipv6_net, "_ORIG_SOCKET", sk)
+        except Exception:
+            pass
+        _RAW_NET = (gi, sk)
+    return _RAW_NET
+
+
+def _https_post(scheme: str, host: str, port: int | None, path: str,
+                body: bytes, headers: dict, timeout: float) -> tuple:
+    """最小 HTTP(S) 客户端：用原始 socket 建连，绕过进程级 IPv6 护栏。"""
+    import http.client
+
+    gi, sk = _raw_net()
+    port = port or (443 if scheme == "https" else 80)
+    if scheme == "http":
+        conn = http.client.HTTPConnection(host, port, timeout=timeout)
+    else:
+        conn = http.client.HTTPSConnection(host, port, timeout=timeout)
+
+    def _connect():
+        last_error = None
+        sock = None
+        import socket as _socket
+        for fam, typ, proto, _cn, addr in gi(host, port, 0, _socket.SOCK_STREAM):
+            try:
+                sock = sk(fam, typ, proto)
+                sock.settimeout(timeout)
+                sock.connect(addr)
+                break
+            except OSError as ex:
+                last_error = ex
+                if sock is not None:
+                    sock.close()
+                sock = None
+        if sock is None:
+            raise last_error or OSError(f"connect failed: {host}:{port}")
+        if scheme == "http":
+            conn.sock = sock
+        else:
+            conn.sock = conn._context.wrap_socket(sock, server_hostname=host)
+
+    conn.connect = _connect
+    try:
+        conn.request("POST", path, body=body, headers=headers)
+        resp = conn.getresponse()
+        return resp.read(), resp.status, resp.reason, resp.headers
+    finally:
+        conn.close()
+
+
 def _llm_chat(cfg: dict, messages: list[dict], timeout: float = 120.0) -> str:
     """调用 OpenAI 兼容接口，返回助手消息文本。
 
@@ -585,9 +654,10 @@ def _llm_chat(cfg: dict, messages: list[dict], timeout: float = 120.0) -> str:
     低/中/高时按预算开启思考并附带 reasoning_effort，接口拒绝该参数时依次降级
     并记住结果。
     """
+    import io
     import json
     import urllib.error
-    import urllib.request
+    import urllib.parse
 
     sub = cfg.get("subtitle") or {}
     base = (sub.get("api_base") or "").strip().rstrip("/")
@@ -598,6 +668,10 @@ def _llm_chat(cfg: dict, messages: list[dict], timeout: float = 120.0) -> str:
     if not key:
         raise RuntimeError("翻译 API Key 未配置")
     url = base if base.endswith("/chat/completions") else base + "/chat/completions"
+    parts = urllib.parse.urlsplit(url)
+    path = parts.path or "/"
+    if parts.query:
+        path += "?" + parts.query
     flag = (base, model)
     payload = {
         "model": model,
@@ -616,12 +690,15 @@ def _llm_chat(cfg: dict, messages: list[dict], timeout: float = 120.0) -> str:
             payload["reasoning_effort"] = level
 
     def _post(body: dict) -> dict:
-        req = urllib.request.Request(
-            url, data=json.dumps(body).encode("utf-8"), method="POST",
-            headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {key}"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8", "replace"))
+        data = json.dumps(body).encode("utf-8")
+        raw, status, reason, headers = _https_post(
+            parts.scheme or "https", parts.hostname or "", parts.port, path, data,
+            {"Content-Type": "application/json",
+             "Authorization": f"Bearer {key}",
+             "Content-Length": str(len(data))}, timeout)
+        if status >= 400:
+            raise urllib.error.HTTPError(url, status, reason, headers, io.BytesIO(raw))
+        return json.loads(raw.decode("utf-8", "replace"))
 
     data = None
     for _ in range(3):
