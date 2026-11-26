@@ -546,7 +546,6 @@ class SubtitleEngine:
                 job_id, status="done", message="没有需要识别的音频",
                 progress=1.0, finished_at=_now())
             return
-            return
         audio_rels = [rel for g in groups for rel in g]  # 扁平列表用于台本/字幕映射
 
         # 台本扫描（和原来一样）
