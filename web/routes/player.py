@@ -314,8 +314,10 @@ def get_player_work(source_id: str):
     local_path = w.get("local_path") or ""
     local_subs = _scan_subtitles(local_path, source_id) if local_path else []
 
-    # 本地没有 → 问 API 要
-    api_subs = _fetch_api_subtitles(cfg, source_id) if not local_subs else []
+    # 本地没有字幕、且作品确实存在官方字幕时才问 API；
+    # 没有官方字幕的作品直接跳过，弹窗不再为必然为空的请求等待网络
+    api_subs = (_fetch_api_subtitles(cfg, source_id)
+                if not local_subs and w.get("has_subtitle") else [])
 
     return jsonify({
         "work": w,
