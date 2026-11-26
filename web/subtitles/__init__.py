@@ -535,14 +535,17 @@ class SubtitleEngine:
             return [int(t) if t.isdigit() else t.lower()
                     for t in re.split(r"(\d+)", rel)]
         groups.sort(key=lambda g: _nat(g[0]))
-        # 同 stem 的格式副本按“组”翻译：整组都被关掉才跳过
-        disabled = set()  # 翻译不服从音轨勾选：日文已生成就必须翻译
-        if disabled:
-            groups = [g for g in groups if not all(rel in disabled for rel in g)]
+        # 识别服从音轨勾选：整组都被取消勾选的音轨不参与 ASR。
+        # 开局按当前勾选过滤一次；运行中每组开始前再读一次，弹窗里改勾选可实时生效
+        prefs0 = self.db.get_track_prefs(work_id)
+        if prefs0:
+            groups = [g for g in groups
+                      if not all(prefs0.get(rel, True) is False for rel in g)]
         if not groups:
             self.db.update_subtitle_job(
-                job_id, status="done", message="没有需要翻译的音频",
+                job_id, status="done", message="没有需要识别的音频",
                 progress=1.0, finished_at=_now())
+            return
             return
         audio_rels = [rel for g in groups for rel in g]  # 扁平列表用于台本/字幕映射
 
@@ -592,6 +595,15 @@ class SubtitleEngine:
                 self.db.update_subtitle_job(job_id, status="paused",
                                             message=f"已暂停 {done}/{total}")
                 return
+            # 实时勾选：跑任务期间在弹窗里取消勾选的组，轮到它时直接跳过
+            live = self.db.get_track_prefs(work_id)
+            if live and all(live.get(rel, True) is False for rel in group):
+                done += 1
+                self.db.update_subtitle_job(
+                    job_id, done_tracks=done, route="skipped",
+                    progress=done / max(1, total),
+                    message=f"{done}/{total} · 已取消勾选")
+                continue
             ok, reason = self._resources_ok(cfg, root, job_id, check_idle=(gi == 0))
             if not ok:
                 self.db.update_subtitle_job(job_id, status="paused",
