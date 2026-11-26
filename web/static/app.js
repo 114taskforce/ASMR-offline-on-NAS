@@ -1780,6 +1780,10 @@ async function showWorkDetail(sourceId, from = "") {
   modal.classList.remove("hidden");
   body.innerHTML = "加载中...";
   $("#modal-close").onclick = () => modal.classList.add("hidden");
+  // 「生成字幕」入口的音轨列表与作品信息并行拉取，弹窗打开更快
+  const tracksReq = from === "subm"
+    ? api(`/api/subtitles/tracks/${encodeURIComponent(sourceId)}`).catch(() => null)
+    : Promise.resolve(null);
   try {
     const data = await api(`/api/player/work/${sourceId}`);
     const w = data.work;
@@ -1790,11 +1794,8 @@ async function showWorkDetail(sourceId, from = "") {
 
     // 「生成字幕」入口：音轨翻译勾选放在这里，弹窗底部只保留打开播放页
     if (from === "subm") {
-      let tracks = [];
-      try {
-        const tr = await api(`/api/subtitles/tracks/${encodeURIComponent(sourceId)}`);
-        tracks = tr.tracks || [];
-      } catch (e) { /* 忽略：音轨加载失败时只留播放入口 */ }
+      const tr = await tracksReq;
+      let tracks = (tr && tr.tracks) || [];
 
       const rows = tracks.map(t => {
         const on = t.translate !== false;
@@ -3609,6 +3610,14 @@ function submSetToggle(on) {
   btn.setAttribute("aria-checked", on ? "true" : "false");
 }
 
+// 「空闲自动卸载」开关：on = 引擎空闲后立即释放 VAD/ASR 模型内存
+function submIdleSet(on) {
+  const btn = $("#subm-idle-toggle");
+  if (!btn) return;
+  btn.classList.toggle("on", !!on);
+  btn.setAttribute("aria-checked", on ? "true" : "false");
+}
+
 function submRenderWindows() {
   const box = $("#subm-offpeak-windows");
   if (!box) return;
@@ -3675,8 +3684,8 @@ function openSubmSettings() {
   setNum("subm-set-vad", s.vad_threshold ?? 0.4);
   setNum("subm-set-min-speech", s.vad_min_speech ?? 0.25);
   setNum("subm-set-min-silence", s.vad_min_silence ?? 0.2);
-  const idleEl = $("#subm-set-idle");
-  if (idleEl) idleEl.value = String(Number(s.model_idle_minutes ?? 10));
+  const idleEl = $("#subm-idle-toggle");
+  if (idleEl) submIdleSet(Number(s.model_idle_minutes ?? 10) > 0);
   const wk = $("#subm-set-workers");
   if (wk) {
     const maxW = Math.max(1, Number(s.asr_workers_max) || 1);
@@ -3716,7 +3725,7 @@ function submSettingsSnapshot() {
     speech: val("subm-set-min-speech"),
     silence: val("subm-set-min-silence"),
     workers: val("subm-set-workers"),
-    idle: val("subm-set-idle"),
+    idle: $("#subm-idle-toggle")?.classList.contains("on") ? "1" : "0",
     effort: submEffortIndex,
     offpeak: !!submOffpeakDraft.enabled,
     windows,
@@ -3749,7 +3758,7 @@ async function saveSubmSettings() {
     vad_min_silence: submNumValue("subm-set-min-silence", 0.2, 0.05, 2),
     asr_workers: submNumValue("subm-set-workers", 1, 1,
       Math.max(1, Number($("#subm-set-workers")?.max) || 1)),
-    model_idle_minutes: submNumValue("subm-set-idle", 10, 0, 1440),
+    model_idle_minutes: $("#subm-idle-toggle")?.classList.contains("on") ? 1 : 0,
     api_thinking: (SUBM_EFFORT[submEffortIndex] || SUBM_EFFORT[0])[0],
     api_offpeak: {
       enabled: !!submOffpeakDraft.enabled,
@@ -3808,17 +3817,11 @@ document.addEventListener("DOMContentLoaded", () => {
     workersSet.addEventListener("change", clamp);
     workersSet.addEventListener("blur", clamp);
   }
-  const idleSet = $("#subm-set-idle");
-  if (idleSet) {
-    const clampIdle = () => {
-      const v = Math.round(Number(idleSet.value) || 0);
-      idleSet.value = String(Math.min(1440, Math.max(0, v)));
-      submSyncSaveIcon();
-    };
-    idleSet.addEventListener("input", submSyncSaveIcon);
-    idleSet.addEventListener("change", clampIdle);
-    idleSet.addEventListener("blur", clampIdle);
-  }
+  const idleToggle = $("#subm-idle-toggle");
+  if (idleToggle) idleToggle.addEventListener("click", () => {
+    submIdleSet(!idleToggle.classList.contains("on"));
+    submSyncSaveIcon();
+  });
   bind("#subm-window-add", () => {
     const last = submOffpeakDraft.windows[submOffpeakDraft.windows.length - 1];
     submOffpeakDraft.windows.push({

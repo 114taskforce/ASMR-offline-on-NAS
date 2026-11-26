@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import time
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
@@ -13,6 +14,10 @@ import ipv6_net as net
 import asmr_client as api
 
 player_bp = Blueprint("player", __name__)
+
+# 远程字幕列表拉取失败后的熔断冷却（秒），期间弹窗不再等待 asmr.one
+_API_SUB_COOLDOWN = 600.0
+_api_sub_fail_at = 0.0
 
 
 # 字幕扩展名
@@ -130,17 +135,29 @@ def _scan_subtitles(local_dir: str, work_id: str) -> list[dict]:
 # --------------------------------------------------------------------------
 
 def _fetch_api_subtitles(cfg: dict, work_id: str) -> list[dict]:
-    """列出 asmr.one 上该作品的字幕文件。"""
+    """列出 asmr.one 上该作品的字幕文件。
+
+    该调用发生在弹窗请求路径上：asmr.one 故障时（如 522）登录重试会
+    把响应拖到几十秒，因此用短超时客户端 + 失败熔断（10 分钟冷却）兜底。
+    """
+    global _api_sub_fail_at
+    if time.monotonic() - _api_sub_fail_at < _API_SUB_COOLDOWN:
+        return []
     try:
         _, num = api.AsmrClient.normalize_id(work_id)
     except ValueError:
         return []
 
     try:
-        client = _make_client(cfg)
+        lite = dict(cfg)
+        lite["timeout"] = 8.0
+        lite["retries"] = 1
+        client = _make_client(lite)
         client.login()
         entries = api.AsmrClient.flatten(client.tracks(num))
+        _api_sub_fail_at = 0.0
     except Exception as ex:
+        _api_sub_fail_at = time.monotonic()
         print(f"[subtitle] api subtitle list failed: {ex}", file=sys.stderr, flush=True)
         return []
 

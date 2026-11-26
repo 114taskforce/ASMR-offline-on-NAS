@@ -491,12 +491,13 @@
     <p class="subm-set-hint" id="subm-workers-hint"></p>
 
     <div class="subm-set-row">
-      <span>空闲卸载</span>
-      <input class="subm-set-num" id="subm-set-idle" type="number" min="0" max="1440"
-             step="1" value="10" inputmode="numeric" aria-label="空闲卸载模型的分钟数">
-      <span class="subm-set-unit">分钟</span>
+      <span>空闲自动卸载</span>
+      <button id="subm-idle-toggle" class="squish-switch" type="button" role="switch"
+              aria-checked="true" aria-label="引擎空闲后自动卸载模型">
+        <span class="squish-switch__thumb"></span>
+      </button>
     </div>
-    <p class="subm-set-hint">队列空闲超过该时长后释放模型占用的内存，0 表示不卸载（下次使用需重新加载）。</p>
+    <p class="subm-set-hint">VAD/ASR 引擎空闲后立即释放占用的内存；关闭则常驻内存（下次任务免加载等待）。</p>
 
     <div class="subm-effort" id="subm-effort-box">
       <div class="subm-effort__head"><span>思考强度</span></div>

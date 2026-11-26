@@ -138,8 +138,7 @@ class SubtitleEngine:
         self._overview_cache: tuple[float, dict] = (0.0, {})
         self._last_translate_scan = 0.0
         self._tr_failed_at: dict[str, float] = {}
-        # 空闲卸载模型：记录最后一次任务活动时间与是否已释放
-        self._last_work_at = time.monotonic()
+        # 空闲卸载模型：是否已释放
         self._models_released = False
 
     # ---------------- 生命周期 ----------------
@@ -177,7 +176,6 @@ class SubtitleEngine:
                         self._maybe_unload_idle()
                         time.sleep(2.0)
                         continue
-                    self._last_work_at = time.monotonic()
                     self._models_released = False
                     self._run_job(job)
                 except Exception:
@@ -210,7 +208,6 @@ class SubtitleEngine:
                     if not job:
                         time.sleep(5.0)
                         continue
-                    self._last_work_at = time.monotonic()
                     self._models_released = False
                     self._run_translate_job(job)
                 except Exception:
@@ -220,15 +217,13 @@ class SubtitleEngine:
             print("[subtitle-engine] 翻译 worker 退出", flush=True)
 
     def _maybe_unload_idle(self) -> None:
-        """队列空闲超过「空闲卸载」分钟数后释放模型内存；0 表示不卸载。"""
+        """队列空闲立即释放 VAD/ASR 模型内存；0 表示不卸载（常驻内存）。"""
         sub = self._get_cfg().get("subtitle") or {}
         try:
-            idle_min = float(sub.get("model_idle_minutes", 10))
+            idle_on = float(sub.get("model_idle_minutes", 10)) > 0
         except (TypeError, ValueError):
-            idle_min = 10.0
-        if idle_min <= 0 or self._models_released:
-            return
-        if time.monotonic() - self._last_work_at < idle_min * 60:
+            idle_on = True
+        if not idle_on or self._models_released:
             return
         asr_engine.unload_models()
         self._models_released = True
