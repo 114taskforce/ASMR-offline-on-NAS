@@ -114,9 +114,6 @@ _MAX_DIFF_CHARS = 5
 _DUR_ABS_MIN = 2.0       # 秒
 _DUR_ABS_MAX = 25.0      # 秒（长音频最多放宽到 25s）
 _DUR_REL = 0.05
-# 标题完全一致时的宽松容差（SE 版头尾带环境音，可差几十秒）
-_DUR_SAME_NAME_MIN = 60.0   # 秒
-_DUR_SAME_NAME_REL = 0.08
 
 _DUR_CACHE: dict[str, tuple[float, int, float]] = {}
 _DUR_LOCK = threading.Lock()
@@ -135,17 +132,6 @@ def _sim_key(rel: str) -> str:
 
 def _duration_tol(d: float) -> float:
     return max(_DUR_ABS_MIN, min(_DUR_ABS_MAX, d * _DUR_REL))
-
-
-def _same_name_tol(d: float) -> float:
-    """标题完全一致时放宽的容差。
-
-    带 SE 的版本会在头尾多出环境音/效果音，实测同一音轨可差 18~29 秒
-    （RJ01707098：338.0 vs 320.2、1926.8 vs 1897.9）。标题一个字都不差
-    时几乎必然是同一段内容的不同混音封装，按这个宽松容差判定；
-    标题只是相似（编辑距离 > 0）时仍走严格容差，避免误并不同章节。
-    """
-    return max(_DUR_SAME_NAME_MIN, max(0.0, d) * _DUR_SAME_NAME_REL)
 
 
 def _duration_of(root: str, rel: str, durations: dict | None,
@@ -214,10 +200,7 @@ def _same_content(ka: str, kb: str, da: float, db: float) -> bool:
     if _edit_distance(ka, kb) >= _MAX_DIFF_CHARS:
         return False
     if da > 0 and db > 0:
-        longest = max(da, db)
-        # 标题一字不差 → SE/无SE 混音版本，按宽松容差
-        tol = _same_name_tol(longest) if ka == kb else _duration_tol(longest)
-        return abs(da - db) <= tol
+        return abs(da - db) <= _duration_tol(max(da, db))
     # 时长缺失：只接受标题完全一致，避免误并
     return ka == kb
 
