@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -31,6 +32,17 @@ def main():
     print(f"  下载端口启用 strict IPv6（Flask HTTP 不启用）")
     print(f"  LAN 访问: http://192.168.1.8:{port}")
     print("=" * 60)
+
+    # 后台预热「生成字幕」页的作品状态缓存，避免首次打开等全库扫描
+    def _warm_subtitles() -> None:
+        with app.app_context():
+            try:
+                from web.routes.subtitles import warm_works_cache
+                warm_works_cache()
+            except Exception:
+                pass
+
+    threading.Thread(target=_warm_subtitles, daemon=True).start()
 
     app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
 

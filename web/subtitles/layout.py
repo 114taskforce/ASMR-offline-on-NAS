@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import threading
 
 from . import vtt
 
@@ -243,6 +244,41 @@ def analyze_tracks(root: str, work_id: str,
             buffered = True
 
     return {"buffered": buffered, "complete": has_translated(root) and not buffered}
+
+
+# 按「作品目录 + 三个字幕目录的 mtime」缓存 analyze_tracks 结果：
+# 「生成字幕」页每次都要对全部本地作品跑一遍全目录扫描（200+ 作品约 6 秒），
+# 而音轨/字幕只在下载、识别、翻译时变化，mtime 签名不变就直接复用。
+_ANALYZE_CACHE: dict[tuple, tuple[tuple, dict]] = {}
+_ANALYZE_LOCK = threading.Lock()
+
+
+def _mtime_ns(p: str) -> int:
+    try:
+        return os.stat(p).st_mtime_ns
+    except OSError:
+        return 0
+
+
+def _analyze_sig(root: str) -> tuple:
+    return (root,) + tuple(_mtime_ns(dir_path(root, c)) for c in CATS)
+
+
+def analyze_tracks_cached(root: str, work_id: str,
+                          disabled: set[str] | None = None,
+                          durations: dict | None = None) -> dict[str, bool]:
+    """analyze_tracks 的缓存版；目录未变化时直接返回上次结果。"""
+    key = (root, work_id, frozenset(disabled or ()))
+    sig = _analyze_sig(root)
+    with _ANALYZE_LOCK:
+        hit = _ANALYZE_CACHE.get(key)
+        if hit and hit[0] == sig:
+            return hit[1]
+    res = analyze_tracks(root, work_id, disabled, durations)
+    with _ANALYZE_LOCK:
+        # 同一作品的旧签名项直接覆盖，字典规模恒等于本地作品数
+        _ANALYZE_CACHE[key] = (sig, res)
+    return res
 
 
 def cleanup_orphan_ja(root: str, work_id: str,

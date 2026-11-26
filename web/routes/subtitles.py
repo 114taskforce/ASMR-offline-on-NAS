@@ -230,7 +230,7 @@ def work_status_list():
         tr_status = (job_tr or {}).get("status")
         queuedish = status in ("queued", "paused", "pending_translate")
         # 逐音轨比对：还有音轨只有日文 → 待翻译；所有参与翻译的音轨都有中字才算已完成
-        state = layout.analyze_tracks(
+        state = layout.analyze_tracks_cached(
             lp, w["source_id"], set())  # 待翻译判定不服从音轨勾选
         buffered = state["buffered"]
         complete = state["complete"]
@@ -295,6 +295,23 @@ def work_status_list():
 def _api_configured() -> bool:
     sub = _cfg().get("subtitle") or {}
     return bool((sub.get("api_key") or "").strip())
+
+
+def warm_works_cache() -> None:
+    """启动后在后台预跑一次作品状态扫描，填充 analyze_tracks 缓存。
+
+    「生成字幕」页首开会全量扫描本地作品（200+ 作品约 6 秒），
+    预热后首个请求直接命中缓存。
+    """
+    db = current_app.config["DB"]
+    works, _ = db.list_works(page=1, page_size=100000, local_only=True)
+    for w in works:
+        lp = w.get("local_path") or ""
+        if lp and os.path.isdir(lp):
+            try:
+                layout.analyze_tracks_cached(lp, w["source_id"], set())
+            except Exception:
+                continue
 
 
 def _fully_generated(work: dict) -> bool:
