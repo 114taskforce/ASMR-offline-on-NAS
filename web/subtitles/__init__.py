@@ -667,6 +667,7 @@ class SubtitleEngine:
             if raw:
                 self._emit(root, work_id, group, raw)
                 self._set_generated_flag(work_id)
+                self.db.clear_track_prefs(work_id, group)
                 done += 1
                 reused += 1
                 self.db.update_subtitle_job(
@@ -688,6 +689,8 @@ class SubtitleEngine:
                 self._emit(root, work_id, group, out_text)
                 self._set_generated_flag(work_id)
                 self._cache_subtitle(work_id, primary, out_text)
+            # 识别完成 → 清掉勾选记录，弹窗回归「已有日文/中文则不勾选」
+            self.db.clear_track_prefs(work_id, group)
             done += 1
             if result.get("route") in ("cache", "local-sub", "official",
                                        "script-timed", "script-align",

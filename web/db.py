@@ -938,6 +938,20 @@ class Database:
     def disabled_tracks(self, work_id: str) -> set[str]:
         return {k for k, v in self.get_track_prefs(work_id).items() if not v}
 
+    def clear_track_prefs(self, work_id: str, rel_paths) -> None:
+        """删除指定音轨的勾选记录。
+
+        识别完成后调用：清掉之后弹窗会按「已有日文/中文」自动显示为不勾选，
+        不会因为历史勾选记录一直保持打勾状态。
+        """
+        rels = [r for r in rel_paths if r]
+        if not rels:
+            return
+        with self._conn() as conn:
+            conn.executemany(
+                "DELETE FROM subtitle_track_prefs WHERE work_id=? AND rel_path=?",
+                [(work_id, r) for r in rels])
+
     def cancel_queued_jobs(self, work_ids: list[str]) -> int:
         """把勾选作品的排队/暂停任务移出队列（标记 cancelled）。"""
         if not work_ids:
