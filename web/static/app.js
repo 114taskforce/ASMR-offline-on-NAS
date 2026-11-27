@@ -1077,11 +1077,15 @@ async function verifySwitchTargets(pairs) {
   return pairs.filter(p => {
     const c = byId.get(p.to.source_id);
     if (!c) return false;
+    // asmr.one 的 other_language_editions_in_db 明确列出 = 同作品的语言版本，
+    // 这一条本身就足够；original_workno / edition_group 常缺失或写法不一致
+    // （如 RJ01529502 的 group 是 "RJ01529502"，中文版是 "45190"、original 为空），
+    // 硬性要求它们相等会让真实中文版永远复核失败、静默下载日文版
     const listed = (p.from.editions || []).some(e => e.source_id === c.source_id);
     const sameOriginal = c.original_workno && c.original_workno === p.from.source_id;
     const sameGroup = c.edition_group && p.from.edition_group &&
                       String(c.edition_group) === String(p.from.edition_group);
-    return listed && (sameOriginal || sameGroup);
+    return listed || sameOriginal || sameGroup;
   }).map(p => ({ from: p.from, to: byId.get(p.to.source_id) }));
 }
 
