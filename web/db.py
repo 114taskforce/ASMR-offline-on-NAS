@@ -206,6 +206,7 @@ class Database:
         self.db_path = db_path
         os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
         self._lock = threading.Lock()
+        self._size_lock = threading.Lock()
         # 主线程初始化
         with self._conn() as conn:
             conn.executescript(SCHEMA_SQL)
@@ -680,6 +681,49 @@ class Database:
                 GROUP BY storage_root
             """).fetchall()
         return {r["storage_root"]: int(r["used"] or 0) for r in rows}
+
+    def refresh_local_sizes(self, only_missing: bool = False) -> int:
+        """按磁盘实际文件重算作品占用与文件数。
+
+        旧库（或从旧备份恢复的库）里 total_size 常为 0，会让设置页把所有已下载
+        数据都算成「系统/其他」。这里以磁盘为准回填，返回修正的作品数。
+        """
+        if not self._size_lock.acquire(blocking=False):
+            return 0
+        try:
+            with self._conn() as conn:
+                rows = conn.execute(
+                    "SELECT source_id, local_path, file_count, total_size FROM works "
+                    "WHERE local_path IS NOT NULL AND local_path != ''").fetchall()
+
+            updates = []
+            for r in rows:
+                if only_missing and (r["total_size"] or 0) > 0:
+                    continue
+                p = r["local_path"]
+                if not os.path.isdir(p):
+                    continue
+                count = 0
+                size = 0
+                for dirpath, _dirs, files in os.walk(p):
+                    for f in files:
+                        try:
+                            size += os.path.getsize(os.path.join(dirpath, f))
+                        except OSError:
+                            continue
+                        count += 1
+                if count == (r["file_count"] or 0) and size == (r["total_size"] or 0):
+                    continue
+                updates.append((count, size, r["source_id"]))
+
+            if updates:
+                with self._conn() as conn:
+                    conn.executemany(
+                        "UPDATE works SET file_count=?, total_size=?, "
+                        "updated_at=CURRENT_TIMESTAMP WHERE source_id=?", updates)
+            return len(updates)
+        finally:
+            self._size_lock.release()
 
     def storage_roots_seen(self) -> list[str]:
         """历史作品使用过的存储根（用于“添加存储空间”时给出建议）。"""

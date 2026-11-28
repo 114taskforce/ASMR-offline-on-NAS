@@ -702,7 +702,10 @@ def scan_library():
             db.update_local_work(w["source_id"], "", "", 0, 0)
             removed_count += 1
 
-    # 2. 扫描各存储根，发现新目录
+    # 2. 按磁盘实际文件回填占用（旧库 total_size 可能为 0），保证用量统计准确
+    repaired = db.refresh_local_sizes()
+
+    # 3. 扫描各存储根，发现新目录
     roots = [r["path"] for r in storage_entries(cfg)]
 
     new_works = 0
@@ -741,6 +744,7 @@ def scan_library():
         "scanned_dirs": scan_count,
         "removed_stale": removed_count,
         "newly_found": new_works,
+        "repaired_sizes": repaired,
     })
 
 
